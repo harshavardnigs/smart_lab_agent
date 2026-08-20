@@ -1,6 +1,25 @@
 from fastapi import FastAPI
+from pathlib import Path
+import pyexasol
+import ssl
 
 app = FastAPI(title="SmartLab AI API")
+
+
+def get_connection():
+    password = Path.home().joinpath(
+        ".exasol-starter-kit",
+        "credentials",
+        "nano_sys_password"
+    ).read_text().strip()
+
+    return pyexasol.connect(
+        dsn="127.0.0.1:8563",
+        user="sys",
+        password=password,
+        encryption=True,
+        websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+    )
 
 
 @app.get("/")
@@ -12,19 +31,38 @@ def home():
 
 @app.get("/equipment")
 def get_equipment():
-    return {
-        "equipment": [
-            {
-                "id": 1,
-                "name": "Oscilloscope 01",
-                "availability": "Available",
-                "health_score": 94
-            },
-            {
-                "id": 2,
-                "name": "Oscilloscope 02",
-                "availability": "Booked",
-                "health_score": 91
-            }
+    conn = get_connection()
+
+    try:
+        result = conn.execute("""
+            SELECT
+                equipment_id,
+                name,
+                equipment_type,
+                availability,
+                health_score,
+                maintenance_date,
+                status
+            FROM SMARTLAB.EQUIPMENT
+            ORDER BY equipment_id
+        """).fetchall()
+
+        columns = [
+            "id",
+            "name",
+            "equipment_type",
+            "availability",
+            "health_score",
+            "maintenance_date",
+            "status"
         ]
-    }
+
+        equipment = [
+            dict(zip(columns, row))
+            for row in result
+        ]
+
+        return {"equipment": equipment}
+
+    finally:
+        conn.close()
