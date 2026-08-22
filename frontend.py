@@ -1,19 +1,101 @@
+
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import messagebox
 from datetime import datetime
+import requests
+
 
 # ============================================================
-# SMARTLAB AI — FRONTEND PROTOTYPE
-# College Laboratory Management System
+# SMARTLAB AI — CONNECTED FRONTEND
+# Frontend -> FastAPI -> Exasol
+# Exasol -> FastAPI -> Frontend
 # ============================================================
 
-root = tk.Tk()
-root.title("SmartLab AI")
-root.geometry("1400x850")
-root.minsize(1100, 700)
-root.configure(bg="#F4F7FB")
+API_URL = "http://127.0.0.1:8000"
+CURRENT_USER_ID = 1
+CURRENT_USER_NAME = "Arun Kumar"
 
-# ---------------- COLORS ----------------
+
+# ============================================================
+# API FUNCTIONS
+# ============================================================
+
+def get_equipment():
+    response = requests.get(f"{API_URL}/equipment", timeout=10)
+    response.raise_for_status()
+    return response.json()["equipment"]
+
+
+def get_bookings():
+    response = requests.get(f"{API_URL}/bookings", timeout=10)
+    response.raise_for_status()
+    return response.json()["bookings"]
+
+
+def create_booking(equipment_id, booking_date, start_time, end_time):
+    response = requests.post(
+        f"{API_URL}/bookings",
+        params={
+            "user_id": CURRENT_USER_ID,
+            "equipment_id": equipment_id,
+            "booking_date": booking_date,
+            "start_time": start_time,
+            "end_time": end_time
+        },
+        timeout=10
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def get_issues():
+    response = requests.get(f"{API_URL}/issues", timeout=10)
+    response.raise_for_status()
+    return response.json()["issues"]
+
+
+def create_issue(equipment_id, description, priority):
+    response = requests.post(
+        f"{API_URL}/issues",
+        params={
+            "equipment_id": equipment_id,
+            "reported_by": CURRENT_USER_ID,
+            "description": description,
+            "priority": priority
+        },
+        timeout=10
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+# ============================================================
+# SAFE API HELPER
+# ============================================================
+
+def api_error_message(error):
+    if isinstance(error, requests.exceptions.ConnectionError):
+        return (
+            "Could not connect to the SmartLab backend.\n\n"
+            "Make sure backend.py is running on port 8000."
+        )
+
+    if isinstance(error, requests.exceptions.Timeout):
+        return "The SmartLab backend took too long to respond."
+
+    if isinstance(error, requests.exceptions.HTTPError):
+        return (
+            f"The backend returned an error.\n\n"
+            f"Status: {error.response.status_code}\n"
+            f"Response: {error.response.text}"
+        )
+
+    return f"Unexpected error:\n\n{error}"
+
+
+# ============================================================
+# COLORS
+# ============================================================
 
 NAVY = "#172554"
 BLUE = "#2563EB"
@@ -31,89 +113,32 @@ WHITE = "#FFFFFF"
 BORDER = "#E2E8F0"
 BG = "#F4F7FB"
 
-# ---------------- SAMPLE DATA ----------------
-
-equipment = [
-    {
-        "id": 1,
-        "name": "Oscilloscope 01",
-        "type": "Oscilloscope",
-        "availability": "Available",
-        "health": 94,
-        "maintenance": "15 Sep 2026",
-        "status": "Operational"
-    },
-    {
-        "id": 2,
-        "name": "Oscilloscope 02",
-        "type": "Oscilloscope",
-        "availability": "Booked",
-        "health": 91,
-        "maintenance": "10 Oct 2026",
-        "status": "Operational"
-    },
-    {
-        "id": 3,
-        "name": "Power Supply 01",
-        "type": "Power Supply",
-        "availability": "Unavailable",
-        "health": 63,
-        "maintenance": "25 Aug 2026",
-        "status": "Maintenance"
-    },
-    {
-        "id": 4,
-        "name": "Function Generator 01",
-        "type": "Function Generator",
-        "availability": "Available",
-        "health": 88,
-        "maintenance": "05 Nov 2026",
-        "status": "Operational"
-    },
-    {
-        "id": 5,
-        "name": "Digital Multimeter 01",
-        "type": "Multimeter",
-        "availability": "Available",
-        "health": 97,
-        "maintenance": "15 Jan 2027",
-        "status": "Operational"
-    }
-]
-
-bookings = [
-    {
-        "equipment": "Oscilloscope 01",
-        "date": "20 Aug 2026",
-        "time": "10:00 - 11:00",
-        "status": "Confirmed"
-    },
-    {
-        "equipment": "Oscilloscope 02",
-        "date": "20 Aug 2026",
-        "time": "14:00 - 15:00",
-        "status": "Confirmed"
-    }
-]
-
-notifications = [
-    {
-        "title": "Maintenance Alert",
-        "message": "Power Supply 01 requires maintenance.",
-        "priority": "High"
-    },
-    {
-        "title": "Booking Confirmed",
-        "message": "Your Oscilloscope 01 booking is confirmed.",
-        "priority": "Medium"
-    }
-]
-
-# ---------------- FONTS ----------------
-
 FONT = "Segoe UI"
 
-# ---------------- HELPER FUNCTIONS ----------------
+
+# ============================================================
+# WINDOW
+# ============================================================
+
+root = tk.Tk()
+root.title("SmartLab AI")
+root.geometry("1400x850")
+root.minsize(1100, 700)
+root.configure(bg=BG)
+
+
+# ============================================================
+# GLOBAL DATA
+# ============================================================
+
+equipment = []
+bookings = []
+issues = []
+
+
+# ============================================================
+# HELPER FUNCTIONS
+# ============================================================
 
 def clear_content():
     for widget in content.winfo_children():
@@ -138,17 +163,17 @@ def create_button(parent, text, command, bg=BLUE, fg=WHITE):
     )
 
 
-def card(parent, width=250, height=120):
-    frame = tk.Frame(
+def card(parent):
+    return tk.Frame(
         parent,
         bg=WHITE,
         highlightbackground=BORDER,
         highlightthickness=1
     )
-    return frame
 
 
 def section_title(parent, title, subtitle=None):
+
     tk.Label(
         parent,
         text=title,
@@ -167,15 +192,41 @@ def section_title(parent, title, subtitle=None):
         ).pack(anchor="w", pady=(3, 15))
 
 
-# ---------------- DASHBOARD ----------------
+def refresh_data():
+
+    global equipment, bookings, issues
+
+    try:
+        equipment = get_equipment()
+        bookings = get_bookings()
+        issues = get_issues()
+
+    except Exception as e:
+        print("DATA REFRESH ERROR:", repr(e))
+
+
+# ============================================================
+# DASHBOARD
+# ============================================================
 
 def show_dashboard():
 
+    refresh_data()
     clear_content()
+
+    available_count = sum(
+        1 for item in equipment
+        if item["availability"] == "Available"
+    )
+
+    open_issues = sum(
+        1 for issue in issues
+        if issue["status"].lower() == "open"
+    )
 
     tk.Label(
         content,
-        text="Good evening, Arun 👋",
+        text=f"Good evening, {CURRENT_USER_NAME} 👋",
         font=(FONT, 28, "bold"),
         bg=BG,
         fg=TEXT
@@ -190,20 +241,26 @@ def show_dashboard():
     ).pack(anchor="w", pady=(2, 22))
 
     # Statistics
+
     stats = tk.Frame(content, bg=BG)
     stats.pack(fill="x")
 
     stats_data = [
-        ("🔬", "Equipment", "5", BLUE),
-        ("🟢", "Available", "3", GREEN),
-        ("🚨", "Open Issues", "1", RED),
-        ("🔔", "Notifications", "2", PURPLE)
+        ("🔬", "Equipment", str(len(equipment)), BLUE),
+        ("🟢", "Available", str(available_count), GREEN),
+        ("🚨", "Open Issues", str(open_issues), RED),
+        ("📅", "Bookings", str(len(bookings)), PURPLE)
     ]
 
     for icon, title, value, color in stats_data:
 
         c = card(stats)
-        c.pack(side="left", fill="both", expand=True, padx=(0, 15))
+        c.pack(
+            side="left",
+            fill="both",
+            expand=True,
+            padx=(0, 15)
+        )
 
         tk.Label(
             c,
@@ -228,13 +285,23 @@ def show_dashboard():
             fg=MUTED
         ).pack(anchor="w", padx=18, pady=(0, 15))
 
-    # AI insight
+    # AI Insight
+
+    low_health = None
+
+    if equipment:
+        low_health = min(
+            equipment,
+            key=lambda x: float(x["health_score"])
+        )
+
     ai_frame = tk.Frame(
         content,
         bg="#EEF2FF",
         highlightbackground="#C7D2FE",
         highlightthickness=1
     )
+
     ai_frame.pack(fill="x", pady=25)
 
     tk.Label(
@@ -245,29 +312,44 @@ def show_dashboard():
         fg=PURPLE
     ).pack(anchor="w", padx=22, pady=(18, 5))
 
-    tk.Label(
-        ai_frame,
-        text="Power Supply 01 has a health score of 63% and an open high-priority issue.",
-        font=(FONT, 11, "bold"),
-        bg="#EEF2FF",
-        fg=TEXT
-    ).pack(anchor="w", padx=22)
+    if low_health:
 
-    tk.Label(
-        ai_frame,
-        text="Recommendation: Keep the equipment unavailable until maintenance is completed.",
-        font=(FONT, 10),
-        bg="#EEF2FF",
-        fg=MUTED
-    ).pack(anchor="w", padx=22, pady=(5, 18))
+        tk.Label(
+            ai_frame,
+            text=(
+                f'{low_health["name"]} has the lowest health score '
+                f'at {low_health["health_score"]}%.'
+            ),
+            font=(FONT, 11, "bold"),
+            bg="#EEF2FF",
+            fg=TEXT
+        ).pack(anchor="w", padx=22)
+
+        tk.Label(
+            ai_frame,
+            text=(
+                f'Recommendation: Check its maintenance status. '
+                f'Current status: {low_health["status"]}.'
+            ),
+            font=(FONT, 10),
+            bg="#EEF2FF",
+            fg=MUTED
+        ).pack(anchor="w", padx=22, pady=(5, 18))
 
     # Lower section
+
     lower = tk.Frame(content, bg=BG)
     lower.pack(fill="both", expand=True)
 
     # Equipment preview
+
     left = tk.Frame(lower, bg=BG)
-    left.pack(side="left", fill="both", expand=True, padx=(0, 12))
+    left.pack(
+        side="left",
+        fill="both",
+        expand=True,
+        padx=(0, 12)
+    )
 
     tk.Label(
         left,
@@ -277,7 +359,7 @@ def show_dashboard():
         fg=TEXT
     ).pack(anchor="w", pady=(0, 12))
 
-    for item in equipment[:3]:
+    for item in equipment[:5]:
 
         c = tk.Frame(
             left,
@@ -285,6 +367,7 @@ def show_dashboard():
             highlightbackground=BORDER,
             highlightthickness=1
         )
+
         c.pack(fill="x", pady=5)
 
         tk.Label(
@@ -293,23 +376,41 @@ def show_dashboard():
             font=(FONT, 11, "bold"),
             bg=WHITE,
             fg=TEXT
-        ).pack(side="left", padx=15, pady=13)
-
-        color = GREEN if item["availability"] == "Available" else (
-            RED if item["availability"] == "Unavailable" else ORANGE
+        ).pack(
+            side="left",
+            padx=15,
+            pady=13
         )
+
+        availability = item["availability"]
+
+        if availability == "Available":
+            color = GREEN
+        elif availability == "Booked":
+            color = ORANGE
+        else:
+            color = RED
 
         tk.Label(
             c,
-            text=item["availability"],
+            text=availability,
             font=(FONT, 9, "bold"),
             bg=WHITE,
             fg=color
-        ).pack(side="right", padx=15)
+        ).pack(
+            side="right",
+            padx=15
+        )
 
-    # Bookings
+    # Bookings preview
+
     right = tk.Frame(lower, bg=BG)
-    right.pack(side="right", fill="both", expand=True, padx=(12, 0))
+    right.pack(
+        side="right",
+        fill="both",
+        expand=True,
+        padx=(12, 0)
+    )
 
     tk.Label(
         right,
@@ -319,7 +420,7 @@ def show_dashboard():
         fg=TEXT
     ).pack(anchor="w", pady=(0, 12))
 
-    for booking in bookings:
+    for booking in bookings[:5]:
 
         c = tk.Frame(
             right,
@@ -327,6 +428,7 @@ def show_dashboard():
             highlightbackground=BORDER,
             highlightthickness=1
         )
+
         c.pack(fill="x", pady=5)
 
         tk.Label(
@@ -349,23 +451,29 @@ def show_dashboard():
 
         tk.Label(
             info,
-            text=f'{booking["date"]}  •  {booking["time"]}',
+            text=(
+                f'{booking["date"]}  •  '
+                f'{booking["start_time"]} - {booking["end_time"]}'
+            ),
             font=(FONT, 9),
             bg=WHITE,
             fg=MUTED
         ).pack(anchor="w")
 
 
-# ---------------- EQUIPMENT PAGE ----------------
+# ============================================================
+# EQUIPMENT PAGE
+# ============================================================
 
 def show_equipment():
 
+    refresh_data()
     clear_content()
 
     section_title(
         content,
         "🔬 Equipment",
-        "View laboratory equipment, availability and health."
+        "Equipment loaded directly from Exasol."
     )
 
     toolbar = tk.Frame(content, bg=BG)
@@ -379,17 +487,22 @@ def show_equipment():
         relief="solid",
         bd=1
     )
-    search.pack(side="left", ipadx=15, ipady=8)
 
-    create_button(
-        toolbar,
-        "Search",
-        lambda: filter_equipment(search.get()),
-        BLUE
-    ).pack(side="left", padx=8)
+    search.pack(
+        side="left",
+        ipadx=15,
+        ipady=8
+    )
 
-    equipment_container = tk.Frame(content, bg=BG)
-    equipment_container.pack(fill="both", expand=True)
+    equipment_container = tk.Frame(
+        content,
+        bg=BG
+    )
+
+    equipment_container.pack(
+        fill="both",
+        expand=True
+    )
 
     def render(items):
 
@@ -404,10 +517,18 @@ def show_equipment():
                 highlightbackground=BORDER,
                 highlightthickness=1
             )
-            c.pack(fill="x", pady=6)
+
+            c.pack(
+                fill="x",
+                pady=6
+            )
 
             top = tk.Frame(c, bg=WHITE)
-            top.pack(fill="x", padx=20, pady=(15, 5))
+            top.pack(
+                fill="x",
+                padx=20,
+                pady=(15, 5)
+            )
 
             tk.Label(
                 top,
@@ -417,15 +538,18 @@ def show_equipment():
                 fg=TEXT
             ).pack(side="left")
 
-            status_color = (
-                GREEN if item["availability"] == "Available"
-                else ORANGE if item["availability"] == "Booked"
-                else RED
-            )
+            availability = item["availability"]
+
+            if availability == "Available":
+                status_color = GREEN
+            elif availability == "Booked":
+                status_color = ORANGE
+            else:
+                status_color = RED
 
             tk.Label(
                 top,
-                text=f'● {item["availability"]}',
+                text=f"● {availability}",
                 font=(FONT, 10, "bold"),
                 bg=WHITE,
                 fg=status_color
@@ -433,57 +557,90 @@ def show_equipment():
 
             tk.Label(
                 c,
-                text=item["type"],
+                text=item["equipment_type"],
                 font=(FONT, 9),
                 bg=WHITE,
                 fg=MUTED
-            ).pack(anchor="w", padx=20)
+            ).pack(
+                anchor="w",
+                padx=20
+            )
 
             details = tk.Frame(c, bg=WHITE)
-            details.pack(fill="x", padx=20, pady=12)
+            details.pack(
+                fill="x",
+                padx=20,
+                pady=12
+            )
+
+            health = float(item["health_score"])
 
             tk.Label(
                 details,
-                text=f'Health: {item["health"]}%',
+                text=f'Health: {health:.0f}%',
                 font=(FONT, 10, "bold"),
                 bg=WHITE,
-                fg=GREEN if item["health"] >= 80 else RED
-            ).pack(side="left", padx=(0, 30))
+                fg=GREEN if health >= 80 else RED
+            ).pack(
+                side="left",
+                padx=(0, 30)
+            )
 
             tk.Label(
                 details,
-                text=f'Maintenance: {item["maintenance"]}',
+                text=f'Maintenance: {item["maintenance_date"]}',
                 font=(FONT, 9),
                 bg=WHITE,
                 fg=MUTED
             ).pack(side="left")
 
-            if item["availability"] == "Available":
+            if availability == "Available":
+
                 create_button(
                     details,
                     "Book",
-                    lambda x=item: book_equipment(x),
+                    lambda x=item: open_booking_window(x),
                     BLUE
                 ).pack(side="right")
 
-    def filter_equipment(query):
+    def filter_equipment():
 
-        query = query.lower()
+        query = search.get().lower().strip()
 
         filtered = [
-            item for item in equipment
+            item
+            for item in equipment
             if query in item["name"].lower()
-            or query in item["type"].lower()
+            or query in item["equipment_type"].lower()
         ]
 
         render(filtered)
 
+    create_button(
+        toolbar,
+        "Search",
+        filter_equipment,
+        BLUE
+    ).pack(
+        side="left",
+        padx=8
+    )
+
+    create_button(
+        toolbar,
+        "Refresh",
+        show_equipment,
+        GREEN
+    ).pack(side="left")
+
     render(equipment)
 
 
-# ---------------- BOOK EQUIPMENT ----------------
+# ============================================================
+# BOOKING WINDOW
+# ============================================================
 
-def book_equipment(item):
+def open_booking_window(item):
 
     if item["availability"] != "Available":
         messagebox.showwarning(
@@ -492,24 +649,207 @@ def book_equipment(item):
         )
         return
 
-    messagebox.showinfo(
-        "Booking",
-        f'{item["name"]} is available.\n\n'
-        "Booking form will be connected to the database next."
+    window = tk.Toplevel(root)
+
+    window.title("Book Equipment")
+    window.geometry("430x430")
+    window.configure(bg=BG)
+    window.resizable(False, False)
+
+    tk.Label(
+        window,
+        text="📅 Book Equipment",
+        font=(FONT, 20, "bold"),
+        bg=BG,
+        fg=TEXT
+    ).pack(
+        pady=(25, 5)
+    )
+
+    tk.Label(
+        window,
+        text=item["name"],
+        font=(FONT, 12, "bold"),
+        bg=BG,
+        fg=BLUE
+    ).pack(pady=(0, 20))
+
+    form = tk.Frame(window, bg=WHITE)
+    form.pack(
+        fill="both",
+        expand=True,
+        padx=25,
+        pady=10
+    )
+
+    tk.Label(
+        form,
+        text="Date (YYYY-MM-DD)",
+        font=(FONT, 10, "bold"),
+        bg=WHITE,
+        fg=TEXT
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(20, 5)
+    )
+
+    date_entry = tk.Entry(
+        form,
+        font=(FONT, 11),
+        relief="solid",
+        bd=1
+    )
+
+    date_entry.pack(
+        fill="x",
+        padx=20,
+        ipady=7
+    )
+
+    date_entry.insert(
+        0,
+        datetime.now().strftime("%Y-%m-%d")
+    )
+
+    tk.Label(
+        form,
+        text="Start Time (HH:MM)",
+        font=(FONT, 10, "bold"),
+        bg=WHITE,
+        fg=TEXT
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(15, 5)
+    )
+
+    start_entry = tk.Entry(
+        form,
+        font=(FONT, 11),
+        relief="solid",
+        bd=1
+    )
+
+    start_entry.pack(
+        fill="x",
+        padx=20,
+        ipady=7
+    )
+
+    start_entry.insert(0, "10:00")
+
+    tk.Label(
+        form,
+        text="End Time (HH:MM)",
+        font=(FONT, 10, "bold"),
+        bg=WHITE,
+        fg=TEXT
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(15, 5)
+    )
+
+    end_entry = tk.Entry(
+        form,
+        font=(FONT, 11),
+        relief="solid",
+        bd=1
+    )
+
+    end_entry.pack(
+        fill="x",
+        padx=20,
+        ipady=7
+    )
+
+    end_entry.insert(0, "11:00")
+
+    def submit_booking():
+
+        booking_date = date_entry.get().strip()
+        start_time = start_entry.get().strip()
+        end_time = end_entry.get().strip()
+
+        if not booking_date or not start_time or not end_time:
+            messagebox.showwarning(
+                "Missing information",
+                "Please fill in all booking fields."
+            )
+            return
+
+        try:
+            result = create_booking(
+                int(item["id"]),
+                booking_date,
+                start_time,
+                end_time
+            )
+
+            if result.get("success"):
+
+                messagebox.showinfo(
+                    "Booking Confirmed",
+                    f'{item["name"]} has been booked successfully.'
+                )
+
+                window.destroy()
+                show_bookings()
+
+            else:
+
+                messagebox.showwarning(
+                    "Booking Failed",
+                    result.get(
+                        "message",
+                        "The booking could not be created."
+                    )
+                )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Booking Error",
+                api_error_message(e)
+            )
+
+    create_button(
+        form,
+        "Confirm Booking",
+        submit_booking,
+        BLUE
+    ).pack(
+        pady=25
     )
 
 
-# ---------------- BOOKINGS PAGE ----------------
+# ============================================================
+# BOOKINGS PAGE
+# ============================================================
 
 def show_bookings():
 
+    refresh_data()
     clear_content()
 
     section_title(
         content,
         "📅 Bookings",
-        "Your upcoming laboratory equipment reservations."
+        "Bookings loaded directly from the SmartLab database."
     )
+
+    if not bookings:
+
+        tk.Label(
+            content,
+            text="No bookings found.",
+            font=(FONT, 12),
+            bg=BG,
+            fg=MUTED
+        ).pack(pady=40)
+
+        return
 
     for booking in bookings:
 
@@ -519,17 +859,32 @@ def show_bookings():
             highlightbackground=BORDER,
             highlightthickness=1
         )
-        c.pack(fill="x", pady=7)
+
+        c.pack(
+            fill="x",
+            pady=7
+        )
 
         tk.Label(
             c,
             text="📅",
             font=(FONT, 25),
             bg=WHITE
-        ).pack(side="left", padx=20, pady=18)
+        ).pack(
+            side="left",
+            padx=20,
+            pady=18
+        )
 
-        info = tk.Frame(c, bg=WHITE)
-        info.pack(side="left", pady=15)
+        info = tk.Frame(
+            c,
+            bg=WHITE
+        )
+
+        info.pack(
+            side="left",
+            pady=15
+        )
 
         tk.Label(
             info,
@@ -541,103 +896,380 @@ def show_bookings():
 
         tk.Label(
             info,
-            text=f'{booking["date"]}  •  {booking["time"]}',
+            text=(
+                f'{booking["date"]}  •  '
+                f'{booking["start_time"]} - '
+                f'{booking["end_time"]}'
+            ),
             font=(FONT, 10),
             bg=WHITE,
             fg=MUTED
-        ).pack(anchor="w", pady=3)
+        ).pack(
+            anchor="w",
+            pady=3
+        )
+
+        status = booking["status"]
 
         tk.Label(
             c,
-            text="● Confirmed",
+            text=f"● {status}",
             font=(FONT, 10, "bold"),
             bg=WHITE,
-            fg=GREEN
-        ).pack(side="right", padx=25)
+            fg=GREEN if status == "Confirmed" else RED
+        ).pack(
+            side="right",
+            padx=25
+        )
+
+    create_button(
+        content,
+        "Refresh Bookings",
+        show_bookings,
+        GREEN
+    ).pack(
+        anchor="e",
+        pady=15
+    )
 
 
-# ---------------- ISSUES PAGE ----------------
+# ============================================================
+# ISSUES PAGE
+# ============================================================
 
 def show_issues():
 
+    refresh_data()
     clear_content()
 
     section_title(
         content,
         "🚨 Issues",
-        "Report and track laboratory equipment problems."
+        "Issues loaded directly from the SmartLab database."
     )
 
     create_button(
         content,
         "+ Report New Issue",
-        report_issue,
+        open_issue_window,
         RED
-    ).pack(anchor="e", pady=(0, 15))
-
-    issue = tk.Frame(
-        content,
-        bg=WHITE,
-        highlightbackground="#FECACA",
-        highlightthickness=1
+    ).pack(
+        anchor="e",
+        pady=(0, 15)
     )
-    issue.pack(fill="x")
+
+    if not issues:
+
+        tk.Label(
+            content,
+            text="No issues reported.",
+            font=(FONT, 12),
+            bg=BG,
+            fg=MUTED
+        ).pack(pady=40)
+
+        return
+
+    for issue in issues:
+
+        issue_frame = tk.Frame(
+            content,
+            bg=WHITE,
+            highlightbackground="#FECACA",
+            highlightthickness=1
+        )
+
+        issue_frame.pack(
+            fill="x",
+            pady=6
+        )
+
+        tk.Label(
+            issue_frame,
+            text=f'⚠  {issue["equipment"]}',
+            font=(FONT, 14, "bold"),
+            bg=WHITE,
+            fg=TEXT
+        ).pack(
+            anchor="w",
+            padx=20,
+            pady=(18, 5)
+        )
+
+        tk.Label(
+            issue_frame,
+            text=issue["description"],
+            font=(FONT, 10),
+            bg=WHITE,
+            fg=MUTED
+        ).pack(
+            anchor="w",
+            padx=20
+        )
+
+        bottom = tk.Frame(
+            issue_frame,
+            bg=WHITE
+        )
+
+        bottom.pack(
+            fill="x",
+            padx=20,
+            pady=15
+        )
+
+        priority = issue["priority"]
+
+        tk.Label(
+            bottom,
+            text=priority.upper(),
+            font=(FONT, 9, "bold"),
+            bg=LIGHT_RED if priority.lower() == "high" else LIGHT_ORANGE,
+            fg=RED if priority.lower() == "high" else ORANGE,
+            padx=8,
+            pady=4
+        ).pack(side="left")
+
+        tk.Label(
+            bottom,
+            text=f'Status: {issue["status"]}',
+            font=(FONT, 9, "bold"),
+            bg=WHITE,
+            fg=RED if issue["status"].lower() == "open" else GREEN
+        ).pack(
+            side="left",
+            padx=15
+        )
+
+        tk.Label(
+            bottom,
+            text=f'Reported: {issue["reported_date"]}',
+            font=(FONT, 9),
+            bg=WHITE,
+            fg=MUTED
+        ).pack(side="right")
+
+
+# ============================================================
+# REPORT ISSUE WINDOW
+# ============================================================
+
+def open_issue_window():
+
+    refresh_data()
+
+    window = tk.Toplevel(root)
+
+    window.title("Report Issue")
+    window.geometry("500x500")
+    window.configure(bg=BG)
+    window.resizable(False, False)
 
     tk.Label(
-        issue,
-        text="⚠  Power Supply 01",
-        font=(FONT, 14, "bold"),
+        window,
+        text="🚨 Report Equipment Issue",
+        font=(FONT, 20, "bold"),
+        bg=BG,
+        fg=TEXT
+    ).pack(pady=(25, 20))
+
+    form = tk.Frame(
+        window,
+        bg=WHITE
+    )
+
+    form.pack(
+        fill="both",
+        expand=True,
+        padx=25,
+        pady=10
+    )
+
+    tk.Label(
+        form,
+        text="Equipment",
+        font=(FONT, 10, "bold"),
         bg=WHITE,
         fg=TEXT
-    ).pack(anchor="w", padx=20, pady=(18, 5))
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(20, 5)
+    )
 
-    tk.Label(
-        issue,
-        text="Power supply output is unstable",
+    equipment_names = [
+        item["name"]
+        for item in equipment
+    ]
+
+    equipment_box = tk.StringVar()
+
+    equipment_dropdown = tk.OptionMenu(
+        form,
+        equipment_box,
+        *equipment_names
+    )
+
+    equipment_dropdown.config(
         font=(FONT, 10),
-        bg=WHITE,
-        fg=MUTED
-    ).pack(anchor="w", padx=20)
+        bg="#F8FAFC",
+        relief="solid",
+        bd=1
+    )
 
-    bottom = tk.Frame(issue, bg=WHITE)
-    bottom.pack(fill="x", padx=20, pady=15)
+    equipment_dropdown.pack(
+        fill="x",
+        padx=20
+    )
 
-    tk.Label(
-        bottom,
-        text="HIGH PRIORITY",
-        font=(FONT, 9, "bold"),
-        bg=LIGHT_RED,
-        fg=RED,
-        padx=8,
-        pady=4
-    ).pack(side="left")
+    if equipment_names:
+        equipment_box.set(equipment_names[0])
 
     tk.Label(
-        bottom,
-        text="Status: Open",
-        font=(FONT, 9, "bold"),
+        form,
+        text="Priority",
+        font=(FONT, 10, "bold"),
         bg=WHITE,
-        fg=RED
-    ).pack(side="left", padx=15)
+        fg=TEXT
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(15, 5)
+    )
+
+    priority_box = tk.StringVar(value="High")
+
+    priority_dropdown = tk.OptionMenu(
+        form,
+        priority_box,
+        "Low",
+        "Medium",
+        "High"
+    )
+
+    priority_dropdown.config(
+        font=(FONT, 10),
+        bg="#F8FAFC",
+        relief="solid",
+        bd=1
+    )
+
+    priority_dropdown.pack(
+        fill="x",
+        padx=20
+    )
 
     tk.Label(
-        bottom,
-        text="Reported: 19 Aug 2026",
-        font=(FONT, 9),
+        form,
+        text="Description",
+        font=(FONT, 10, "bold"),
         bg=WHITE,
-        fg=MUTED
-    ).pack(side="right")
+        fg=TEXT
+    ).pack(
+        anchor="w",
+        padx=20,
+        pady=(15, 5)
+    )
 
+    description = tk.Text(
+        form,
+        height=5,
+        font=(FONT, 10),
+        relief="solid",
+        bd=1
+    )
 
-def report_issue():
+    description.pack(
+        fill="x",
+        padx=20
+    )
 
-    messagebox.showinfo(
-        "Report Issue",
-        "Issue reporting form will be connected to the database next."
+    def submit_issue():
+
+        selected_name = equipment_box.get()
+        description_text = description.get(
+            "1.0",
+            "end"
+        ).strip()
+
+        if not selected_name:
+            messagebox.showwarning(
+                "Missing information",
+                "Please select equipment."
+            )
+            return
+
+        if not description_text:
+            messagebox.showwarning(
+                "Missing information",
+                "Please describe the issue."
+            )
+            return
+
+        selected_equipment = next(
+            (
+                item
+                for item in equipment
+                if item["name"] == selected_name
+            ),
+            None
+        )
+
+        if selected_equipment is None:
+            messagebox.showerror(
+                "Error",
+                "Equipment could not be found."
+            )
+            return
+
+        try:
+
+            result = create_issue(
+                int(selected_equipment["id"]),
+                description_text,
+                priority_box.get()
+            )
+
+            if result.get("success"):
+
+                messagebox.showinfo(
+                    "Issue Reported",
+                    "The issue has been saved to the database."
+                )
+
+                window.destroy()
+                show_issues()
+
+            else:
+
+                messagebox.showwarning(
+                    "Issue Failed",
+                    result.get(
+                        "message",
+                        "The issue could not be saved."
+                    )
+                )
+
+        except Exception as e:
+
+            messagebox.showerror(
+                "Issue Error",
+                api_error_message(e)
+            )
+
+    create_button(
+        form,
+        "Submit Issue",
+        submit_issue,
+        RED
+    ).pack(
+        pady=20
     )
 
 
-# ---------------- NOTIFICATIONS PAGE ----------------
+# ============================================================
+# NOTIFICATIONS PAGE
+# ============================================================
 
 def show_notifications():
 
@@ -646,12 +1278,24 @@ def show_notifications():
     section_title(
         content,
         "🔔 Notifications",
-        "Important updates from your laboratory."
+        "SmartLab notifications."
     )
 
-    for notification in notifications:
+    # Notifications currently come from the database seed data.
+    notifications = [
+        {
+            "title": "Maintenance Alert",
+            "message": "Power Supply 01 requires maintenance.",
+            "priority": "High"
+        },
+        {
+            "title": "Booking Confirmed",
+            "message": "Your Oscilloscope 01 booking is confirmed.",
+            "priority": "Medium"
+        }
+    ]
 
-        bg_color = LIGHT_RED if notification["priority"] == "High" else LIGHT_BLUE
+    for notification in notifications:
 
         c = tk.Frame(
             content,
@@ -659,18 +1303,36 @@ def show_notifications():
             highlightbackground=BORDER,
             highlightthickness=1
         )
-        c.pack(fill="x", pady=6)
+
+        c.pack(
+            fill="x",
+            pady=6
+        )
 
         tk.Label(
             c,
             text="●",
             font=(FONT, 15),
             bg=WHITE,
-            fg=RED if notification["priority"] == "High" else BLUE
-        ).pack(side="left", padx=20)
+            fg=(
+                RED
+                if notification["priority"] == "High"
+                else BLUE
+            )
+        ).pack(
+            side="left",
+            padx=20
+        )
 
-        info = tk.Frame(c, bg=WHITE)
-        info.pack(side="left", pady=15)
+        info = tk.Frame(
+            c,
+            bg=WHITE
+        )
+
+        info.pack(
+            side="left",
+            pady=15
+        )
 
         tk.Label(
             info,
@@ -686,13 +1348,19 @@ def show_notifications():
             font=(FONT, 9),
             bg=WHITE,
             fg=MUTED
-        ).pack(anchor="w", pady=3)
+        ).pack(
+            anchor="w",
+            pady=3
+        )
 
 
-# ---------------- AI PAGE ----------------
+# ============================================================
+# AI PAGE
+# ============================================================
 
 def show_ai():
 
+    refresh_data()
     clear_content()
 
     tk.Label(
@@ -709,7 +1377,10 @@ def show_ai():
         font=(FONT, 11),
         bg=BG,
         fg=MUTED
-    ).pack(anchor="w", pady=(2, 20))
+    ).pack(
+        anchor="w",
+        pady=(2, 20)
+    )
 
     chat = tk.Frame(
         content,
@@ -717,7 +1388,11 @@ def show_ai():
         highlightbackground=BORDER,
         highlightthickness=1
     )
-    chat.pack(fill="both", expand=True)
+
+    chat.pack(
+        fill="both",
+        expand=True
+    )
 
     messages = tk.Text(
         chat,
@@ -729,29 +1404,36 @@ def show_ai():
         pady=25,
         wrap="word"
     )
-    messages.pack(fill="both", expand=True)
+
+    messages.pack(
+        fill="both",
+        expand=True
+    )
 
     messages.insert(
         "end",
         "🤖 Lab AI\n\n"
         "Hello! I'm your SmartLab assistant.\n\n"
-        "I can help you with:\n"
+        "I can currently answer questions about:\n"
         "• Equipment availability\n"
-        "• Bookings\n"
-        "• Maintenance alerts\n"
         "• Equipment health\n"
-        "• Reported issues\n"
-        "• Laboratory recommendations\n\n"
-        "Try asking:\n"
-        "\"Which equipment is available?\"\n"
-        "\"Which equipment needs maintenance?\"\n"
-        "\"Which equipment has the lowest health score?\"\n"
+        "• Maintenance\n"
+        "• Bookings\n"
+        "• Reported issues\n\n"
     )
 
     messages.config(state="disabled")
 
-    bottom = tk.Frame(chat, bg=WHITE)
-    bottom.pack(fill="x", padx=20, pady=20)
+    bottom = tk.Frame(
+        chat,
+        bg=WHITE
+    )
+
+    bottom.pack(
+        fill="x",
+        padx=20,
+        pady=20
+    )
 
     entry = tk.Entry(
         bottom,
@@ -760,7 +1442,13 @@ def show_ai():
         relief="solid",
         bd=1
     )
-    entry.pack(side="left", fill="x", expand=True, ipady=10)
+
+    entry.pack(
+        side="left",
+        fill="x",
+        expand=True,
+        ipady=10
+    )
 
     def ask_ai():
 
@@ -773,70 +1461,132 @@ def show_ai():
 
         messages.insert(
             "end",
-            f"\n\nYou: {question}\n"
+            f"\nYou: {question}\n"
         )
 
         q = question.lower()
 
         if "available" in q:
+
+            available = [
+                item["name"]
+                for item in equipment
+                if item["availability"] == "Available"
+            ]
+
             answer = (
-                "I found 3 available pieces of equipment: "
-                "Oscilloscope 01, Function Generator 01, "
-                "and Digital Multimeter 01."
+                f"There are {len(available)} available pieces "
+                f"of equipment: {', '.join(available)}."
             )
 
-        elif "maintenance" in q or "health" in q:
-            answer = (
-                "Power Supply 01 currently has the lowest "
-                "health score at 63% and is under maintenance."
-            )
+        elif "maintenance" in q or "lowest" in q or "health" in q:
 
-        elif "book" in q:
+            if equipment:
+
+                lowest = min(
+                    equipment,
+                    key=lambda x: float(x["health_score"])
+                )
+
+                answer = (
+                    f'{lowest["name"]} has the lowest health score '
+                    f'at {lowest["health_score"]}%. '
+                    f'Its current status is {lowest["status"]}.'
+                )
+
+            else:
+                answer = "I couldn't retrieve equipment data."
+
+        elif "booking" in q or "book" in q:
+
             answer = (
-                "Oscilloscope 01 is currently available and "
-                "has a health score of 94%. I recommend it."
+                f"There are currently {len(bookings)} bookings "
+                "in the database. You can make a new booking "
+                "from the Equipment page."
             )
 
         elif "issue" in q or "problem" in q:
+
+            open_issue_list = [
+                issue
+                for issue in issues
+                if issue["status"].lower() == "open"
+            ]
+
             answer = (
-                "There is currently one open issue: "
-                "Power Supply 01 has an unstable output."
+                f"There are {len(open_issue_list)} open issues "
+                "in the laboratory."
             )
 
+            if open_issue_list:
+                answer += (
+                    f' The latest is for '
+                    f'{open_issue_list[0]["equipment"]}: '
+                    f'{open_issue_list[0]["description"]}.'
+                )
+
         else:
+
             answer = (
-                "I can help you with equipment, bookings, "
-                "maintenance, issues and laboratory recommendations."
+                "I can help you with equipment availability, "
+                "equipment health, maintenance, bookings and issues."
             )
 
         messages.insert(
             "end",
-            f"🤖 AI: {answer}"
+            f"🤖 AI: {answer}\n"
         )
 
         messages.config(state="disabled")
         entry.delete(0, "end")
+        messages.see("end")
 
     create_button(
         bottom,
         "Ask AI",
         ask_ai,
         PURPLE
-    ).pack(side="left", padx=10)
+    ).pack(
+        side="left",
+        padx=10
+    )
 
-    entry.bind("<Return>", lambda event: ask_ai())
+    entry.bind(
+        "<Return>",
+        lambda event: ask_ai()
+    )
 
 
-# ---------------- SIDEBAR ----------------
+# ============================================================
+# SIDEBAR
+# ============================================================
 
-sidebar = tk.Frame(root, bg=NAVY, width=245)
-sidebar.pack(side="left", fill="y")
+sidebar = tk.Frame(
+    root,
+    bg=NAVY,
+    width=245
+)
+
+sidebar.pack(
+    side="left",
+    fill="y"
+)
+
 sidebar.pack_propagate(False)
+
 
 # Logo
 
-logo = tk.Frame(sidebar, bg=NAVY)
-logo.pack(fill="x", padx=25, pady=28)
+logo = tk.Frame(
+    sidebar,
+    bg=NAVY
+)
+
+logo.pack(
+    fill="x",
+    padx=25,
+    pady=28
+)
 
 tk.Label(
     logo,
@@ -852,7 +1602,10 @@ tk.Label(
     font=(FONT, 20, "bold"),
     bg=NAVY,
     fg=WHITE
-).pack(side="left", padx=8)
+).pack(
+    side="left",
+    padx=8
+)
 
 tk.Label(
     sidebar,
@@ -860,7 +1613,11 @@ tk.Label(
     font=(FONT, 8, "bold"),
     bg=NAVY,
     fg="#93C5FD"
-).pack(anchor="w", padx=28, pady=(0, 25))
+).pack(
+    anchor="w",
+    padx=28,
+    pady=(0, 25)
+)
 
 
 def nav_button(text, command):
@@ -882,22 +1639,61 @@ def nav_button(text, command):
         cursor="hand2"
     )
 
-    button.pack(fill="x", padx=10, pady=2)
+    button.pack(
+        fill="x",
+        padx=10,
+        pady=2
+    )
 
     return button
 
 
-nav_button("🏠   Dashboard", show_dashboard)
-nav_button("🔬   Equipment", show_equipment)
-nav_button("📅   Bookings", show_bookings)
-nav_button("🚨   Issues", show_issues)
-nav_button("🔔   Notifications", show_notifications)
-nav_button("🤖   Lab AI", show_ai)
+nav_button(
+    "🏠   Dashboard",
+    show_dashboard
+)
 
-# Bottom profile
+nav_button(
+    "🔬   Equipment",
+    show_equipment
+)
 
-profile = tk.Frame(sidebar, bg="#1E3A8A")
-profile.pack(side="bottom", fill="x", padx=12, pady=15)
+nav_button(
+    "📅   Bookings",
+    show_bookings
+)
+
+nav_button(
+    "🚨   Issues",
+    show_issues
+)
+
+nav_button(
+    "🔔   Notifications",
+    show_notifications
+)
+
+nav_button(
+    "🤖   Lab AI",
+    show_ai
+)
+
+
+# ============================================================
+# PROFILE
+# ============================================================
+
+profile = tk.Frame(
+    sidebar,
+    bg="#1E3A8A"
+)
+
+profile.pack(
+    side="bottom",
+    fill="x",
+    padx=12,
+    pady=15
+)
 
 tk.Label(
     profile,
@@ -907,14 +1703,25 @@ tk.Label(
     fg=WHITE,
     width=3,
     height=1
-).pack(side="left", padx=12, pady=12)
+).pack(
+    side="left",
+    padx=12,
+    pady=12
+)
 
-profile_info = tk.Frame(profile, bg="#1E3A8A")
-profile_info.pack(side="left", pady=10)
+profile_info = tk.Frame(
+    profile,
+    bg="#1E3A8A"
+)
+
+profile_info.pack(
+    side="left",
+    pady=10
+)
 
 tk.Label(
     profile_info,
-    text="Arun Kumar",
+    text=CURRENT_USER_NAME,
     font=(FONT, 9, "bold"),
     bg="#1E3A8A",
     fg=WHITE
@@ -929,10 +1736,21 @@ tk.Label(
 ).pack(anchor="w")
 
 
-# ---------------- MAIN CONTENT ----------------
+# ============================================================
+# MAIN CONTENT
+# ============================================================
 
-main = tk.Frame(root, bg=BG)
-main.pack(side="right", fill="both", expand=True)
+main = tk.Frame(
+    root,
+    bg=BG
+)
+
+main.pack(
+    side="right",
+    fill="both",
+    expand=True
+)
+
 
 # Header
 
@@ -943,6 +1761,7 @@ header = tk.Frame(
     highlightbackground=BORDER,
     highlightthickness=1
 )
+
 header.pack(fill="x")
 header.pack_propagate(False)
 
@@ -952,7 +1771,10 @@ tk.Label(
     font=(FONT, 9, "bold"),
     bg=WHITE,
     fg=MUTED
-).pack(side="left", padx=30)
+).pack(
+    side="left",
+    padx=30
+)
 
 tk.Label(
     header,
@@ -960,14 +1782,30 @@ tk.Label(
     font=(FONT, 9, "bold"),
     bg=WHITE,
     fg=GREEN
-).pack(side="right", padx=30)
+).pack(
+    side="right",
+    padx=30
+)
 
-# Content area
 
-content = tk.Frame(main, bg=BG)
-content.pack(fill="both", expand=True, padx=35, pady=30)
+# Content
 
-# Start on dashboard
+content = tk.Frame(
+    main,
+    bg=BG
+)
+
+content.pack(
+    fill="both",
+    expand=True,
+    padx=35,
+    pady=30
+)
+
+
+# ============================================================
+# START APPLICATION
+# ============================================================
 
 show_dashboard()
 
