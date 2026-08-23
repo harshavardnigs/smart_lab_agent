@@ -111,6 +111,20 @@ def mark_notification_read(notification_id):
     return response.json()
 
 
+def ask_ai(message):
+    response = requests.post(
+        f"{API_URL}/ai/chat",
+        json={
+            "user_id": CURRENT_USER_ID,
+            "message": message
+        },
+        timeout=30
+    )
+
+    response.raise_for_status()
+    return response.json()
+
+
 # ============================================================
 # API ERROR HANDLING
 # ============================================================
@@ -1789,7 +1803,7 @@ def show_ai():
 
     tk.Label(
         content,
-        text="Your intelligent laboratory assistant",
+        text="Ask about equipment, bookings, issues, or maintenance.",
         font=(FONT, 11),
         bg=BG,
         fg=MUTED
@@ -1818,26 +1832,123 @@ def show_ai():
         relief="flat",
         padx=25,
         pady=25,
-        wrap="word"
+        wrap="word",
+        state="disabled"
     )
 
     messages.pack(
         fill="both",
-        expand=True
+        expand=True,
+        side="top"
     )
 
-    messages.insert(
-        "end",
-        "🤖 Lab AI\n\n"
-        "The AI model is not connected yet.\n\n"
-        "The SmartLab frontend/backend/database "
-        "connection is ready.\n\n"
-        "Next step: connect the actual AI model "
-        "to the backend.\n"
+    input_bar = tk.Frame(
+        content,
+        bg=BG
     )
 
-    messages.config(
-        state="disabled"
+    input_bar.pack(
+        fill="x",
+        pady=(15, 0)
+    )
+
+    entry = tk.Entry(
+        input_bar,
+        font=(FONT, 11),
+        relief="solid",
+        bd=1
+    )
+
+    entry.pack(
+        side="left",
+        fill="x",
+        expand=True,
+        ipady=9,
+        padx=(0, 10)
+    )
+
+    def append_message(sender, text):
+
+        messages.config(
+            state="normal"
+        )
+
+        messages.insert(
+            "end",
+            f"{sender}: {text}\n\n"
+        )
+
+        messages.config(
+            state="disabled"
+        )
+
+        messages.see(
+            "end"
+        )
+
+    def send_message(event=None):
+
+        text = entry.get().strip()
+
+        if not text:
+            return
+
+        entry.delete(
+            0,
+            "end"
+        )
+
+        append_message(
+            "You",
+            text
+        )
+
+        try:
+
+            result = ask_ai(text)
+
+            if result.get("success"):
+
+                append_message(
+                    "Lab AI",
+                    result["reply"]
+                )
+
+            else:
+
+                append_message(
+                    "Lab AI",
+                    result.get(
+                        "reply",
+                        "Something went wrong."
+                    )
+                )
+
+        except Exception as e:
+
+            append_message(
+                "Lab AI",
+                api_error_message(e)
+            )
+
+    entry.bind(
+        "<Return>",
+        send_message
+    )
+
+    create_button(
+        input_bar,
+        "Send",
+        send_message,
+        BLUE
+    ).pack(
+        side="right"
+    )
+
+    append_message(
+        "Lab AI",
+        "Hi! Ask me about equipment status, open issues, "
+        "or what needs attention in the lab."
     )
 
 

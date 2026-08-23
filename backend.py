@@ -1,10 +1,14 @@
-
+import os
 from fastapi import FastAPI
 from pathlib import Path
+from pydantic import BaseModel
 import pyexasol
 import ssl
+from openai import OpenAI
 
 app = FastAPI(title="SmartLab AI API")
+
+client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])  # set this env var before running
 
 
 # ============================================================
@@ -601,3 +605,104 @@ def mark_notification_read(
         if conn is not None:
             conn.close()
 
+
+# ============================================================
+# AI CHAT
+# EXASOL -> BACKEND -> OPENAI -> FRONTEND
+# ============================================================
+
+class ChatRequest(BaseModel):
+    user_id: int
+    message: str
+
+
+def build_lab_context(conn):
+
+    equipment = conn.execute("""
+        SELECT name, equipment_type, availability, health_score, status, maintenance_date
+        FROM SMARTLAB.EQUIPMENT
+    """).fetchall()
+
+    open_issues = conn.execute("""
+        SELECT e.name, i.description, i.priority, i.reported_date
+        FROM SMARTLAB.ISSUES i
+        JOIN SMARTLAB.EQUIPMENT e ON i.equipment_id = e.equipment_id
+        WHERE i.status = 'Open'
+    """).fetchall()
+
+    upcoming = conn.execute("""
+        SELECT e.name, b.booking_date, b.start_time, b.end_time, b.status
+        FROM SMARTLAB.BOOKINGS b
+        JOIN SMARTLAB.EQUIPMENT e ON b.equipment_id = e.equipment_id
+        WHERE b.booking_date >= CURRENT_DATE
+        ORDER BY b.booking_date
+    """).fetchall()
+
+    lines = ["EQUIPMENT:"]
+    for row in equipment:
+        lines.append(
+            f"- {row[0]} ({row[1]}): {row[2]}, health {row[3]}%, "
+            f"status {row[4]}, next maintenance {row[5]}"
+        )
+
+    lines.append("\nOPEN ISSUES:")
+    if open_issues:
+        for row in open_issues:
+            lines.append(
+                f"- {row[0]}: {row[1]} (priority {row[2]}, reported {row[3]})"
+            )
+    else:
+        lines.append("- None")
+
+    lines.append("\nUPCOMING BOOKINGS:")
+    if upcoming:
+        for row in upcoming:
+            lines.append(
+                f"- {row[0]} on {row[1]} {row[2]}-{row[3]} ({row[4]})"
+            )
+    else:
+        lines.append("- None")
+
+    return "\n".join(lines)
+
+
+@app.post("/ai/chat")
+def ai_chat(request: ChatRequest):
+
+    conn = None
+
+    try:
+        conn = get_connection()
+        context = build_lab_context(conn)
+
+        system_prompt = (
+            "You are the Lab AI assistant for SmartLab, a lab equipment "
+            "management system. Answer questions using ONLY the lab data "
+            "provided below. Be concise and practical. If asked for "
+            "recommendations (e.g. what needs maintenance, what's free "
+            "right now), reason from the health scores, statuses, and "
+            "issues given. If something isn't in the data, say so instead "
+            "of guessing.\n\n"
+            f"CURRENT LAB DATA:\n{context}"
+        )
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.message},
+            ],
+            max_tokens=500,
+        )
+
+        reply = response.choices[0].message.content
+
+        return {"success": True, "reply": reply}
+
+    except Exception as e:
+        print("AI CHAT ERROR:", repr(e))
+        return {"success": False, "reply": f"AI error: {e}"}
+
+    finally:
+        if conn is not None:
+            conn.close()
