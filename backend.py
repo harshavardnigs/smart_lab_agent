@@ -35,13 +35,15 @@ def get_connection():
 @app.get("/")
 def home():
     return {
-        "message": "SmartLab AI API is running!"
+        "message": "SmartLab AI API is running!",
+        "database": "Exasol",
+        "status": "connected"
     }
 
 
 # ============================================================
-# GET EQUIPMENT
-# FRONTEND -> BACKEND -> EXASOL -> BACKEND -> FRONTEND
+# EQUIPMENT
+# EXASOL -> BACKEND -> FRONTEND
 # ============================================================
 
 @app.get("/equipment")
@@ -108,14 +110,40 @@ def create_booking(
     try:
         conn = get_connection()
 
-        # Check whether equipment exists and is available
+        # ----------------------------------------------------
+        # Check user
+        # ----------------------------------------------------
+
+        user = conn.execute(
+            """
+            SELECT user_id
+            FROM SMARTLAB.USERS
+            WHERE user_id = {user_id}
+            """,
+            {
+                "user_id": user_id
+            }
+        ).fetchone()
+
+        if user is None:
+            return {
+                "success": False,
+                "message": "User not found."
+            }
+
+        # ----------------------------------------------------
+        # Check equipment
+        # ----------------------------------------------------
+
         equipment = conn.execute(
             """
-            SELECT availability
+            SELECT name, availability
             FROM SMARTLAB.EQUIPMENT
-            WHERE equipment_id = ?
+            WHERE equipment_id = {equipment_id}
             """,
-            [equipment_id]
+            {
+                "equipment_id": equipment_id
+            }
         ).fetchone()
 
         if equipment is None:
@@ -124,37 +152,97 @@ def create_booking(
                 "message": "Equipment not found."
             }
 
-        if str(equipment[0]) != "Available":
+        equipment_name = str(equipment[0])
+        availability = str(equipment[1])
+
+        if availability != "Available":
             return {
                 "success": False,
-                "message": "Equipment is not currently available."
+                "message": (
+                    f"{equipment_name} "
+                    "is not currently available."
+                )
             }
 
+        # ----------------------------------------------------
         # Insert booking
+        # ----------------------------------------------------
+
         conn.execute(
             """
             INSERT INTO SMARTLAB.BOOKINGS
-                (user_id, equipment_id, booking_date,
-                 start_time, end_time, status)
-            VALUES (?, ?, ?, ?, ?, 'Confirmed')
+                (
+                    user_id,
+                    equipment_id,
+                    booking_date,
+                    start_time,
+                    end_time,
+                    status
+                )
+            VALUES
+                (
+                    {user_id},
+                    {equipment_id},
+                    {booking_date},
+                    {start_time},
+                    {end_time},
+                    'Confirmed'
+                )
             """,
-            [
-                user_id,
-                equipment_id,
-                booking_date,
-                start_time,
-                end_time
-            ]
+            {
+                "user_id": user_id,
+                "equipment_id": equipment_id,
+                "booking_date": booking_date,
+                "start_time": start_time,
+                "end_time": end_time
+            }
         )
 
-        # Update equipment availability
+        # ----------------------------------------------------
+        # Mark equipment as booked
+        # ----------------------------------------------------
+
         conn.execute(
             """
             UPDATE SMARTLAB.EQUIPMENT
             SET availability = 'Booked'
-            WHERE equipment_id = ?
+            WHERE equipment_id = {equipment_id}
             """,
-            [equipment_id]
+            {
+                "equipment_id": equipment_id
+            }
+        )
+
+        # ----------------------------------------------------
+        # Create notification
+        # ----------------------------------------------------
+
+        conn.execute(
+            """
+            INSERT INTO SMARTLAB.NOTIFICATIONS
+                (
+                    user_id,
+                    message,
+                    priority,
+                    is_read,
+                    created_date
+                )
+            VALUES
+                (
+                    {user_id},
+                    {message},
+                    'Medium',
+                    FALSE,
+                    CURRENT_DATE
+                )
+            """,
+            {
+                "user_id": user_id,
+                "message": (
+                    f"Your {equipment_name} "
+                    "booking is confirmed."
+                )
+            }
         )
 
         return {
@@ -239,19 +327,92 @@ def report_issue(
     try:
         conn = get_connection()
 
+        # ----------------------------------------------------
+        # Check equipment
+        # ----------------------------------------------------
+
+        equipment = conn.execute(
+            """
+            SELECT name
+            FROM SMARTLAB.EQUIPMENT
+            WHERE equipment_id = {equipment_id}
+            """,
+            {
+                "equipment_id": equipment_id
+            }
+        ).fetchone()
+
+        if equipment is None:
+            return {
+                "success": False,
+                "message": "Equipment not found."
+            }
+
+        equipment_name = str(equipment[0])
+
+        # ----------------------------------------------------
+        # Insert issue
+        # ----------------------------------------------------
+
         conn.execute(
             """
             INSERT INTO SMARTLAB.ISSUES
-                (equipment_id, reported_by, description,
-                 priority, status, reported_date)
-            VALUES (?, ?, ?, ?, 'Open', CURRENT_DATE)
+                (
+                    equipment_id,
+                    reported_by,
+                    description,
+                    priority,
+                    status,
+                    reported_date
+                )
+            VALUES
+                (
+                    {equipment_id},
+                    {reported_by},
+                    {description},
+                    {priority},
+                    'Open',
+                    CURRENT_DATE
+                )
             """,
-            [
-                equipment_id,
-                reported_by,
-                description,
-                priority
-            ]
+            {
+                "equipment_id": equipment_id,
+                "reported_by": reported_by,
+                "description": description,
+                "priority": priority
+            }
+        )
+
+        # ----------------------------------------------------
+        # Create notification for lab manager
+        # ----------------------------------------------------
+
+        conn.execute(
+            """
+            INSERT INTO SMARTLAB.NOTIFICATIONS
+                (
+                    user_id,
+                    message,
+                    priority,
+                    is_read,
+                    created_date
+                )
+            VALUES
+                (
+                    3,
+                    {message},
+                    {priority},
+                    FALSE,
+                    CURRENT_DATE
+                )
+            """,
+            {
+                "message": (
+                    f"Issue reported for "
+                    f"{equipment_name}: {description}"
+                ),
+                "priority": priority
+            }
         )
 
         return {
@@ -292,7 +453,9 @@ def get_issues():
             FROM SMARTLAB.ISSUES i
             JOIN SMARTLAB.EQUIPMENT e
                 ON i.equipment_id = e.equipment_id
-            ORDER BY i.reported_date DESC
+            ORDER BY
+                i.reported_date DESC,
+                i.issue_id DESC
         """).fetchall()
 
         issues = []
@@ -311,6 +474,127 @@ def get_issues():
 
     except Exception as e:
         print("ISSUES ERROR:", repr(e))
+        raise
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ============================================================
+# GET NOTIFICATIONS
+# EXASOL -> BACKEND -> FRONTEND
+# ============================================================
+
+@app.get("/notifications")
+def get_notifications(user_id: int = 1):
+
+    conn = None
+
+    try:
+        conn = get_connection()
+
+        result = conn.execute(
+            """
+            SELECT
+                notification_id,
+                message,
+                priority,
+                is_read,
+                created_date
+            FROM SMARTLAB.NOTIFICATIONS
+            WHERE user_id = {user_id}
+            ORDER BY notification_id DESC
+            """,
+            {
+                "user_id": user_id
+            }
+        ).fetchall()
+
+        notifications = []
+
+        for row in result:
+
+            notification_id = row[0]
+            message = row[1]
+            priority = row[2]
+            is_read = row[3]
+            created_date = row[4]
+
+            if str(priority).upper() == "HIGH":
+                title = "High Priority Alert"
+
+            elif str(priority).upper() == "MEDIUM":
+                title = "SmartLab Update"
+
+            else:
+                title = "SmartLab Notification"
+
+            notifications.append({
+                "notification_id": str(
+                    notification_id
+                ),
+                "title": title,
+                "message": str(message),
+                "priority": str(priority),
+                "is_read": (
+                    str(is_read).upper() == "TRUE"
+                ),
+                "created_date": str(created_date)
+            })
+
+        return {
+            "notifications": notifications
+        }
+
+    except Exception as e:
+        print(
+            "NOTIFICATIONS ERROR:",
+            repr(e)
+        )
+        raise
+
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+# ============================================================
+# MARK NOTIFICATION AS READ
+# FRONTEND -> BACKEND -> EXASOL
+# ============================================================
+
+@app.put("/notifications/{notification_id}/read")
+def mark_notification_read(
+    notification_id: int
+):
+
+    conn = None
+
+    try:
+        conn = get_connection()
+
+        conn.execute(
+            """
+            UPDATE SMARTLAB.NOTIFICATIONS
+            SET is_read = TRUE
+            WHERE notification_id = {notification_id}
+            """,
+            {
+                "notification_id": notification_id
+            }
+        )
+
+        return {
+            "success": True,
+            "message": "Notification marked as read."
+        }
+
+    except Exception as e:
+        print(
+            "NOTIFICATION UPDATE ERROR:",
+            repr(e)
+        )
         raise
 
     finally:
