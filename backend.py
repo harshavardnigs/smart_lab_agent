@@ -1,14 +1,33 @@
 import os
-from fastapi import FastAPI
+import ssl
 from pathlib import Path
+
+from fastapi import FastAPI
 from pydantic import BaseModel
 import pyexasol
-import ssl
 from openai import OpenAI
+
+
+# ============================================================
+# SMARTLAB AI BACKEND
+# FASTAPI <-> EXASOL <-> OPENAI
+# ============================================================
 
 app = FastAPI(title="SmartLab AI API")
 
-client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])  # set this env var before running
+
+# ============================================================
+# OPENAI
+# ============================================================
+
+def get_openai_client():
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+
+    if not api_key:
+        return None
+
+    return OpenAI(api_key=api_key)
 
 
 # ============================================================
@@ -16,18 +35,23 @@ client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])  # set this env var before
 # ============================================================
 
 def get_connection():
-    password = Path.home().joinpath(
+
+    password_file = Path.home().joinpath(
         ".exasol-starter-kit",
         "credentials",
         "nano_sys_password"
-    ).read_text().strip()
+    )
+
+    password = password_file.read_text().strip()
 
     return pyexasol.connect(
         dsn="127.0.0.1:8563",
         user="sys",
         password=password,
         encryption=True,
-        websocket_sslopt={"cert_reqs": ssl.CERT_NONE},
+        websocket_sslopt={
+            "cert_reqs": ssl.CERT_NONE
+        },
         schema="SMARTLAB",
     )
 
@@ -38,6 +62,7 @@ def get_connection():
 
 @app.get("/")
 def home():
+
     return {
         "message": "SmartLab AI API is running!",
         "database": "Exasol",
@@ -46,8 +71,29 @@ def home():
 
 
 # ============================================================
+# AI STATUS
+# ============================================================
+
+@app.get("/ai/status")
+def ai_status():
+
+    api_key = os.environ.get("OPENAI_API_KEY")
+
+    if api_key:
+
+        return {
+            "configured": True,
+            "message": "OpenAI API key detected."
+        }
+
+    return {
+        "configured": False,
+        "message": "OPENAI_API_KEY is not available to the backend."
+    }
+
+
+# ============================================================
 # EQUIPMENT
-# EXASOL -> BACKEND -> FRONTEND
 # ============================================================
 
 @app.get("/equipment")
@@ -56,6 +102,7 @@ def get_equipment():
     conn = None
 
     try:
+
         conn = get_connection()
 
         result = conn.execute("""
@@ -74,6 +121,7 @@ def get_equipment():
         equipment = []
 
         for row in result:
+
             equipment.append({
                 "id": str(row[0]),
                 "name": str(row[1]),
@@ -84,20 +132,23 @@ def get_equipment():
                 "status": str(row[6])
             })
 
-        return {"equipment": equipment}
+        return {
+            "equipment": equipment
+        }
 
     except Exception as e:
+
         print("EQUIPMENT ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # CREATE BOOKING
-# FRONTEND -> BACKEND -> EXASOL
 # ============================================================
 
 @app.post("/bookings")
@@ -112,11 +163,10 @@ def create_booking(
     conn = None
 
     try:
+
         conn = get_connection()
 
-        # ----------------------------------------------------
         # Check user
-        # ----------------------------------------------------
 
         user = conn.execute(
             """
@@ -130,14 +180,13 @@ def create_booking(
         ).fetchone()
 
         if user is None:
+
             return {
                 "success": False,
                 "message": "User not found."
             }
 
-        # ----------------------------------------------------
         # Check equipment
-        # ----------------------------------------------------
 
         equipment = conn.execute(
             """
@@ -151,6 +200,7 @@ def create_booking(
         ).fetchone()
 
         if equipment is None:
+
             return {
                 "success": False,
                 "message": "Equipment not found."
@@ -160,6 +210,7 @@ def create_booking(
         availability = str(equipment[1])
 
         if availability != "Available":
+
             return {
                 "success": False,
                 "message": (
@@ -168,9 +219,7 @@ def create_booking(
                 )
             }
 
-        # ----------------------------------------------------
         # Insert booking
-        # ----------------------------------------------------
 
         conn.execute(
             """
@@ -202,9 +251,7 @@ def create_booking(
             }
         )
 
-        # ----------------------------------------------------
         # Mark equipment as booked
-        # ----------------------------------------------------
 
         conn.execute(
             """
@@ -217,9 +264,7 @@ def create_booking(
             }
         )
 
-        # ----------------------------------------------------
         # Create notification
-        # ----------------------------------------------------
 
         conn.execute(
             """
@@ -255,17 +300,18 @@ def create_booking(
         }
 
     except Exception as e:
+
         print("BOOKING ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # GET BOOKINGS
-# EXASOL -> BACKEND -> FRONTEND
 # ============================================================
 
 @app.get("/bookings")
@@ -274,6 +320,7 @@ def get_bookings():
     conn = None
 
     try:
+
         conn = get_connection()
 
         result = conn.execute("""
@@ -287,12 +334,15 @@ def get_bookings():
             FROM SMARTLAB.BOOKINGS b
             JOIN SMARTLAB.EQUIPMENT e
                 ON b.equipment_id = e.equipment_id
-            ORDER BY b.booking_date, b.start_time
+            ORDER BY
+                b.booking_date,
+                b.start_time
         """).fetchall()
 
         bookings = []
 
         for row in result:
+
             bookings.append({
                 "booking_id": str(row[0]),
                 "equipment": str(row[1]),
@@ -302,20 +352,23 @@ def get_bookings():
                 "status": str(row[5])
             })
 
-        return {"bookings": bookings}
+        return {
+            "bookings": bookings
+        }
 
     except Exception as e:
+
         print("BOOKINGS ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # REPORT ISSUE
-# FRONTEND -> BACKEND -> EXASOL
 # ============================================================
 
 @app.post("/issues")
@@ -329,11 +382,8 @@ def report_issue(
     conn = None
 
     try:
-        conn = get_connection()
 
-        # ----------------------------------------------------
-        # Check equipment
-        # ----------------------------------------------------
+        conn = get_connection()
 
         equipment = conn.execute(
             """
@@ -347,16 +397,13 @@ def report_issue(
         ).fetchone()
 
         if equipment is None:
+
             return {
                 "success": False,
                 "message": "Equipment not found."
             }
 
         equipment_name = str(equipment[0])
-
-        # ----------------------------------------------------
-        # Insert issue
-        # ----------------------------------------------------
 
         conn.execute(
             """
@@ -386,10 +433,6 @@ def report_issue(
                 "priority": priority
             }
         )
-
-        # ----------------------------------------------------
-        # Create notification for lab manager
-        # ----------------------------------------------------
 
         conn.execute(
             """
@@ -425,17 +468,18 @@ def report_issue(
         }
 
     except Exception as e:
+
         print("ISSUE ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # GET ISSUES
-# EXASOL -> BACKEND -> FRONTEND
 # ============================================================
 
 @app.get("/issues")
@@ -444,6 +488,7 @@ def get_issues():
     conn = None
 
     try:
+
         conn = get_connection()
 
         result = conn.execute("""
@@ -465,6 +510,7 @@ def get_issues():
         issues = []
 
         for row in result:
+
             issues.append({
                 "issue_id": str(row[0]),
                 "equipment": str(row[1]),
@@ -474,28 +520,34 @@ def get_issues():
                 "reported_date": str(row[5])
             })
 
-        return {"issues": issues}
+        return {
+            "issues": issues
+        }
 
     except Exception as e:
+
         print("ISSUES ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # GET NOTIFICATIONS
-# EXASOL -> BACKEND -> FRONTEND
 # ============================================================
 
 @app.get("/notifications")
-def get_notifications(user_id: int = 1):
+def get_notifications(
+    user_id: int = 1
+):
 
     conn = None
 
     try:
+
         conn = get_connection()
 
         result = conn.execute(
@@ -526,18 +578,19 @@ def get_notifications(user_id: int = 1):
             created_date = row[4]
 
             if str(priority).upper() == "HIGH":
+
                 title = "High Priority Alert"
 
             elif str(priority).upper() == "MEDIUM":
+
                 title = "SmartLab Update"
 
             else:
+
                 title = "SmartLab Notification"
 
             notifications.append({
-                "notification_id": str(
-                    notification_id
-                ),
+                "notification_id": str(notification_id),
                 "title": title,
                 "message": str(message),
                 "priority": str(priority),
@@ -552,20 +605,18 @@ def get_notifications(user_id: int = 1):
         }
 
     except Exception as e:
-        print(
-            "NOTIFICATIONS ERROR:",
-            repr(e)
-        )
+
+        print("NOTIFICATIONS ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
 # MARK NOTIFICATION AS READ
-# FRONTEND -> BACKEND -> EXASOL
 # ============================================================
 
 @app.put("/notifications/{notification_id}/read")
@@ -576,6 +627,7 @@ def mark_notification_read(
     conn = None
 
     try:
+
         conn = get_connection()
 
         conn.execute(
@@ -595,114 +647,236 @@ def mark_notification_read(
         }
 
     except Exception as e:
-        print(
-            "NOTIFICATION UPDATE ERROR:",
-            repr(e)
-        )
+
+        print("NOTIFICATION UPDATE ERROR:", repr(e))
         raise
 
     finally:
+
         if conn is not None:
             conn.close()
 
 
 # ============================================================
-# AI CHAT
-# EXASOL -> BACKEND -> OPENAI -> FRONTEND
+# AI CHAT REQUEST
 # ============================================================
 
 class ChatRequest(BaseModel):
+
     user_id: int
     message: str
 
 
+# ============================================================
+# BUILD LAB CONTEXT FROM EXASOL
+# ============================================================
+
 def build_lab_context(conn):
 
     equipment = conn.execute("""
-        SELECT name, equipment_type, availability, health_score, status, maintenance_date
+        SELECT
+            name,
+            equipment_type,
+            availability,
+            health_score,
+            status,
+            maintenance_date
         FROM SMARTLAB.EQUIPMENT
     """).fetchall()
 
     open_issues = conn.execute("""
-        SELECT e.name, i.description, i.priority, i.reported_date
+        SELECT
+            e.name,
+            i.description,
+            i.priority,
+            i.reported_date
         FROM SMARTLAB.ISSUES i
-        JOIN SMARTLAB.EQUIPMENT e ON i.equipment_id = e.equipment_id
+        JOIN SMARTLAB.EQUIPMENT e
+            ON i.equipment_id = e.equipment_id
         WHERE i.status = 'Open'
     """).fetchall()
 
     upcoming = conn.execute("""
-        SELECT e.name, b.booking_date, b.start_time, b.end_time, b.status
+        SELECT
+            e.name,
+            b.booking_date,
+            b.start_time,
+            b.end_time,
+            b.status
         FROM SMARTLAB.BOOKINGS b
-        JOIN SMARTLAB.EQUIPMENT e ON b.equipment_id = e.equipment_id
+        JOIN SMARTLAB.EQUIPMENT e
+            ON b.equipment_id = e.equipment_id
         WHERE b.booking_date >= CURRENT_DATE
-        ORDER BY b.booking_date
+        ORDER BY
+            b.booking_date,
+            b.start_time
     """).fetchall()
 
-    lines = ["EQUIPMENT:"]
+    lines = [
+        "EQUIPMENT:"
+    ]
+
     for row in equipment:
+
         lines.append(
-            f"- {row[0]} ({row[1]}): {row[2]}, health {row[3]}%, "
-            f"status {row[4]}, next maintenance {row[5]}"
+            f"- {row[0]} ({row[1]}): "
+            f"{row[2]}, "
+            f"health {row[3]}%, "
+            f"status {row[4]}, "
+            f"next maintenance {row[5]}"
         )
 
-    lines.append("\nOPEN ISSUES:")
+    lines.append("")
+    lines.append("OPEN ISSUES:")
+
     if open_issues:
+
         for row in open_issues:
+
             lines.append(
-                f"- {row[0]}: {row[1]} (priority {row[2]}, reported {row[3]})"
+                f"- {row[0]}: "
+                f"{row[1]} "
+                f"(priority {row[2]}, "
+                f"reported {row[3]})"
             )
+
     else:
+
         lines.append("- None")
 
-    lines.append("\nUPCOMING BOOKINGS:")
+    lines.append("")
+    lines.append("UPCOMING BOOKINGS:")
+
     if upcoming:
+
         for row in upcoming:
+
             lines.append(
-                f"- {row[0]} on {row[1]} {row[2]}-{row[3]} ({row[4]})"
+                f"- {row[0]} on "
+                f"{row[1]} "
+                f"{row[2]}-{row[3]} "
+                f"({row[4]})"
             )
+
     else:
+
         lines.append("- None")
 
     return "\n".join(lines)
 
 
+# ============================================================
+# AI CHAT
+# ============================================================
+
 @app.post("/ai/chat")
-def ai_chat(request: ChatRequest):
+def ai_chat(
+    request: ChatRequest
+):
+
+    # --------------------------------------------------------
+    # Get the API key at request time
+    # --------------------------------------------------------
+
+    client = get_openai_client()
+
+    if client is None:
+
+        return {
+            "success": False,
+            "reply": (
+                "OpenAI is not configured for the backend. "
+                "The OPENAI_API_KEY environment variable "
+                "is not available to this Python process."
+            )
+        }
 
     conn = None
 
     try:
+
+        # ----------------------------------------------------
+        # Connect to Exasol
+        # ----------------------------------------------------
+
         conn = get_connection()
+
+        # ----------------------------------------------------
+        # Get current SmartLab data
+        # ----------------------------------------------------
+
         context = build_lab_context(conn)
 
+        # ----------------------------------------------------
+        # AI instructions
+        # ----------------------------------------------------
+
         system_prompt = (
-            "You are the Lab AI assistant for SmartLab, a lab equipment "
-            "management system. Answer questions using ONLY the lab data "
-            "provided below. Be concise and practical. If asked for "
-            "recommendations (e.g. what needs maintenance, what's free "
-            "right now), reason from the health scores, statuses, and "
-            "issues given. If something isn't in the data, say so instead "
-            "of guessing.\n\n"
-            f"CURRENT LAB DATA:\n{context}"
+            "You are the Lab AI assistant for SmartLab, "
+            "a college laboratory management system.\n\n"
+
+            "You have access to the current laboratory "
+            "data provided below.\n\n"
+
+            "Answer questions using ONLY the provided "
+            "SmartLab data. Do not invent facts.\n\n"
+
+            "You can analyze equipment availability, "
+            "health scores, maintenance dates, open issues, "
+            "and bookings.\n\n"
+
+            "If the user asks why students are complaining "
+            "about a lab or equipment, look for relevant "
+            "open issues, equipment problems, low health "
+            "scores, maintenance information, or other "
+            "evidence in the data.\n\n"
+
+            "Be concise, clear, and practical.\n\n"
+
+            "If the requested information does not exist "
+            "in the data, say that it is not available "
+            "rather than guessing.\n\n"
+
+            "CURRENT SMARTLAB DATA:\n"
+            + context
         )
+
+        # ----------------------------------------------------
+        # Call OpenAI
+        # ----------------------------------------------------
 
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": request.message},
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": request.message
+                }
             ],
-            max_tokens=500,
+            max_tokens=500
         )
 
         reply = response.choices[0].message.content
 
-        return {"success": True, "reply": reply}
+        return {
+            "success": True,
+            "reply": reply
+        }
 
     except Exception as e:
+
         print("AI CHAT ERROR:", repr(e))
-        return {"success": False, "reply": f"AI error: {e}"}
+
+        return {
+            "success": False,
+            "reply": f"AI error: {e}"
+        }
 
     finally:
+
         if conn is not None:
             conn.close()

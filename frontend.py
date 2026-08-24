@@ -216,6 +216,194 @@ notifications = []
 
 
 # ============================================================
+# SCROLLABLE MAIN CONTENT
+# ============================================================
+
+main = tk.Frame(
+    root,
+    bg=BG
+)
+
+
+# ============================================================
+# HEADER
+# ============================================================
+
+header = tk.Frame(
+    main,
+    bg=WHITE,
+    height=70,
+    highlightbackground=BORDER,
+    highlightthickness=1
+)
+
+header.pack(
+    fill="x"
+)
+
+header.pack_propagate(
+    False
+)
+
+tk.Label(
+    header,
+    text="SMARTLAB AI",
+    font=(FONT, 9, "bold"),
+    bg=WHITE,
+    fg=MUTED
+).pack(
+    side="left",
+    padx=30
+)
+
+tk.Label(
+    header,
+    text="● Lab Online",
+    font=(FONT, 9, "bold"),
+    bg=WHITE,
+    fg=GREEN
+).pack(
+    side="right",
+    padx=30
+)
+
+
+# ============================================================
+# SCROLL AREA
+# ============================================================
+
+scroll_area = tk.Frame(
+    main,
+    bg=BG
+)
+
+scroll_area.pack(
+    fill="both",
+    expand=True
+)
+
+
+# Canvas
+content_canvas = tk.Canvas(
+    scroll_area,
+    bg=BG,
+    highlightthickness=0,
+    bd=0
+)
+
+content_canvas.pack(
+    side="left",
+    fill="both",
+    expand=True
+)
+
+
+# Scrollbar
+content_scrollbar = tk.Scrollbar(
+    scroll_area,
+    orient="vertical",
+    command=content_canvas.yview
+)
+
+content_scrollbar.pack(
+    side="right",
+    fill="y"
+)
+
+content_canvas.configure(
+    yscrollcommand=content_scrollbar.set
+)
+
+
+# Actual page content
+content = tk.Frame(
+    content_canvas,
+    bg=BG
+)
+
+content_window = content_canvas.create_window(
+    (0, 0),
+    window=content,
+    anchor="nw"
+)
+
+
+# ============================================================
+# SCROLLBAR CONFIGURATION
+# ============================================================
+
+def update_scroll_region(event=None):
+
+    content_canvas.configure(
+        scrollregion=content_canvas.bbox("all")
+    )
+
+
+content.bind(
+    "<Configure>",
+    update_scroll_region
+)
+
+
+def resize_content(event):
+
+    content_canvas.itemconfig(
+        content_window,
+        width=event.width
+    )
+
+
+content_canvas.bind(
+    "<Configure>",
+    resize_content
+)
+
+
+# ============================================================
+# MOUSE WHEEL SCROLLING
+# ============================================================
+
+def mousewheel_scroll(event):
+
+    content_canvas.yview_scroll(
+        int(-1 * (event.delta / 120)),
+        "units"
+    )
+
+
+def linux_scroll_up(event):
+
+    content_canvas.yview_scroll(
+        -1,
+        "units"
+    )
+
+
+def linux_scroll_down(event):
+
+    content_canvas.yview_scroll(
+        1,
+        "units"
+    )
+
+
+root.bind_all(
+    "<MouseWheel>",
+    mousewheel_scroll
+)
+
+root.bind_all(
+    "<Button-4>",
+    linux_scroll_up
+)
+
+root.bind_all(
+    "<Button-5>",
+    linux_scroll_down
+)
+
+
+# ============================================================
 # HELPERS
 # ============================================================
 
@@ -223,6 +411,8 @@ def clear_content():
 
     for widget in content.winfo_children():
         widget.destroy()
+
+    content_canvas.yview_moveto(0)
 
 
 def create_button(
@@ -449,7 +639,9 @@ def show_dashboard():
             pady=(0, 15)
         )
 
+    # ========================================================
     # AI INSIGHT
+    # ========================================================
 
     low_health = None
 
@@ -519,7 +711,9 @@ def show_dashboard():
             pady=(5, 18)
         )
 
+    # ========================================================
     # EQUIPMENT + BOOKINGS
+    # ========================================================
 
     lower = tk.Frame(
         content,
@@ -1316,7 +1510,9 @@ def show_issues():
             text=issue["description"],
             font=(FONT, 10),
             bg=WHITE,
-            fg=MUTED
+            fg=MUTED,
+            wraplength=900,
+            justify="left"
         ).pack(
             anchor="w",
             padx=20
@@ -1468,6 +1664,7 @@ def open_issue_window():
     )
 
     if equipment_names:
+
         equipment_box.set(
             equipment_names[0]
         )
@@ -1718,7 +1915,9 @@ def show_notifications():
             text=notification["message"],
             font=(FONT, 9),
             bg=WHITE,
-            fg=MUTED
+            fg=MUTED,
+            wraplength=750,
+            justify="left"
         ).pack(
             anchor="w",
             pady=3
@@ -1812,6 +2011,10 @@ def show_ai():
         pady=(2, 20)
     )
 
+    # ========================================================
+    # CHAT CONTAINER
+    # ========================================================
+
     chat = tk.Frame(
         content,
         bg=WHITE,
@@ -1824,8 +2027,22 @@ def show_ai():
         expand=True
     )
 
-    messages = tk.Text(
+    # ========================================================
+    # CHAT MESSAGE AREA
+    # ========================================================
+
+    messages_frame = tk.Frame(
         chat,
+        bg=WHITE
+    )
+
+    messages_frame.pack(
+        fill="both",
+        expand=True
+    )
+
+    messages = tk.Text(
+        messages_frame,
         font=(FONT, 11),
         bg=WHITE,
         fg=TEXT,
@@ -1837,10 +2054,29 @@ def show_ai():
     )
 
     messages.pack(
+        side="left",
         fill="both",
-        expand=True,
-        side="top"
+        expand=True
     )
+
+    message_scrollbar = tk.Scrollbar(
+        messages_frame,
+        orient="vertical",
+        command=messages.yview
+    )
+
+    message_scrollbar.pack(
+        side="right",
+        fill="y"
+    )
+
+    messages.configure(
+        yscrollcommand=message_scrollbar.set
+    )
+
+    # ========================================================
+    # INPUT BAR
+    # ========================================================
 
     input_bar = tk.Frame(
         content,
@@ -1903,6 +2139,8 @@ def show_ai():
             text
         )
 
+        root.update_idletasks()
+
         try:
 
             result = ask_ai(text)
@@ -1951,6 +2189,9 @@ def show_ai():
         "or what needs attention in the lab."
     )
 
+    # Put cursor directly in AI input box
+    entry.focus_set()
+
 
 # ============================================================
 # SIDEBAR
@@ -1970,6 +2211,11 @@ sidebar.pack(
 sidebar.pack_propagate(
     False
 )
+
+
+# ============================================================
+# LOGO
+# ============================================================
 
 logo = tk.Frame(
     sidebar,
@@ -2015,6 +2261,10 @@ tk.Label(
     pady=(0, 25)
 )
 
+
+# ============================================================
+# NAVIGATION
+# ============================================================
 
 def nav_button(
     text,
@@ -2140,68 +2390,13 @@ tk.Label(
 
 
 # ============================================================
-# MAIN CONTENT
+# START MAIN WINDOW
 # ============================================================
-
-main = tk.Frame(
-    root,
-    bg=BG
-)
 
 main.pack(
     side="right",
     fill="both",
     expand=True
-)
-
-header = tk.Frame(
-    main,
-    bg=WHITE,
-    height=70,
-    highlightbackground=BORDER,
-    highlightthickness=1
-)
-
-header.pack(
-    fill="x"
-)
-
-header.pack_propagate(
-    False
-)
-
-tk.Label(
-    header,
-    text="SMARTLAB AI",
-    font=(FONT, 9, "bold"),
-    bg=WHITE,
-    fg=MUTED
-).pack(
-    side="left",
-    padx=30
-)
-
-tk.Label(
-    header,
-    text="● Lab Online",
-    font=(FONT, 9, "bold"),
-    bg=WHITE,
-    fg=GREEN
-).pack(
-    side="right",
-    padx=30
-)
-
-content = tk.Frame(
-    main,
-    bg=BG
-)
-
-content.pack(
-    fill="both",
-    expand=True,
-    padx=35,
-    pady=30
 )
 
 
